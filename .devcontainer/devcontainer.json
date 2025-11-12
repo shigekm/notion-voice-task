@@ -1,0 +1,1 @@
+{ "name": "notion-voice-task Codespace", "image": "mcr.microsoft.com/devcontainers/base:ubuntu", "forwardPorts": [], "postCreateCommand": "echo 'Codespace ready!'", "customizations": { "vscode": { "extensions": [] } } }
