@@ -66,13 +66,21 @@ module.exports = async (req, res) => {
       geminiData = {};
     }
 
-    // Notion に渡す安全策
-    const title = geminiData.title || text.slice(0, 50) || "音声メモ";
-    const type = geminiData.type || "Memo";
-    const category = Array.isArray(geminiData.category) && geminiData.category.length ? geminiData.category : ["その他"];
-    const notes = geminiData.notes || text;
+    // Notion API 用プロパティ作成
+    const notionProperties = {
+      "Task name": { title: [{ text: { content: title || "音声タスク" } }] } // 必須
+    };
 
-    // Notion API
+    // 任意列（存在すれば追加）
+    if (status) notionProperties["Status"] = { select: { name: status } };
+    if (assignee) notionProperties["Assignee"] = { rich_text: [{ text: { content: assignee } }] };
+    if (dueDate) notionProperties["Due date"] = { date: { start: dueDate } };
+    if (priority) notionProperties["Priority"] = { select: { name: priority } };
+    if (type) notionProperties["Task type"] = { select: { name: type } };
+    if (notes) notionProperties["Description"] = { rich_text: [{ text: { content: notes } }] };
+    if (effortLevel) notionProperties["Effort level"] = { select: { name: effortLevel } };
+
+    // Notion API 呼び出し
     const notionRes = await fetch(`https://api.notion.com/v1/pages`, {
       method: 'POST',
       headers: {
@@ -82,12 +90,7 @@ module.exports = async (req, res) => {
       },
       body: JSON.stringify({
         parent: { database_id: process.env.NOTION_DB_ID },
-        properties: {
-          Title: { title: [{ text: { content: title } }] },
-          Type: { select: { name: type } },
-          Category: { multi_select: category.map(c => ({ name: c })) },
-          Notes: { rich_text: [{ text: { content: notes } }] }
-        }
+        properties: notionProperties
       })
     });
 
