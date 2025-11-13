@@ -27,17 +27,37 @@ module.exports = async (req, res) => {
     const text = whisperData.text;
 
     // Gemini API
-    const geminiRes = await fetch('https://api.gemini.com/analyze', {
+    const geminiRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.GEMINI_API_KEY}`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.GEMINI_API_KEY}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ text })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: `以下のテキストを解析して、タイトル、種類（task/memoなど）、カテゴリ（["仕事","家庭","健康"]など）をJSONで出力してください。\n\n${text}` }
+            ]
+          }
+        ]
+      })
     });
-    const geminiData = await geminiRes.json();
+
+    const geminiDataRaw = await geminiRes.json();
+
+    // Gemini API の応答をシンプルな JSON に整形
+    let geminiData = {};
+    try {
+      const parsed = JSON.parse(geminiDataRaw.candidates?.[0]?.content?.parts?.[0]?.text || "{}");
+      geminiData = parsed;
+    } catch (e) {
+      console.error("Gemini parse error:", e);
+      geminiData = { title: text.slice(0, 30), type: "Memo", category: ["その他"] };
+    }
+
 
     // Notion API
+
+    const title = geminiData.title || text?.slice(0, 50) || "音声メモ";
+
     const notionRes = await fetch(`https://api.notion.com/v1/pages`, {
       method: 'POST',
       headers: {
