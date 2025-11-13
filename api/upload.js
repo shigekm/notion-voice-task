@@ -68,13 +68,14 @@ module.exports = async (req, res) => {
       body: JSON.stringify({
         parent: { database_id: process.env.NOTION_DB_ID },
         properties: {
-          Title: { title: [{ text: { content: geminiData.title || text } }] },
+          Title: { title: [{ text: { content: title } }] },
           Type: { select: { name: geminiData.type || 'Memo' } },
           Category: { multi_select: (geminiData.category || []).map(c => ({ name: c })) },
           Notes: { rich_text: [{ text: { content: text } }] }
         }
       })
     });
+
     const notionData = await notionRes.json();
 
     fs.unlinkSync(tmpPath);
