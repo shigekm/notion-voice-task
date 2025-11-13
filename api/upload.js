@@ -26,10 +26,19 @@ module.exports = async (req, res) => {
       body: formData
     });
     const whisperData = await whisperRes.json();
-    const text = whisperData.text || "音声タスク"; // フォールバック
+    const text = whisperData.text && whisperData.text.length > 0 ? whisperData.text : "音声内容なし";
 
     // Gemini API（タスク用に整理）
-    let geminiData = { title: text.slice(0,50), type: "Memo", category: [] };
+    let geminiData = {
+      title: text.slice(0,50),
+      type: "Memo",
+      category: [],
+      status: "",
+      assignee: "",
+      dueDate: "",
+      priority: "",
+      effortLevel: ""
+    };
     try {
       const geminiRes = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.GEMINI_API_KEY}`,
@@ -40,7 +49,7 @@ module.exports = async (req, res) => {
             contents: [
               {
                 parts: [
-                  { text: `以下のテキストを解析して、タスク用に整理し、JSONでタイトル・種類・カテゴリ・Status・Assignee・Due date・Priority・Effort levelを出力してください。\n\n${text}` }
+                  { text: `以下のテキストを解析して、タスク用に整理し、JSONでタイトル・種類（type）・カテゴリ・Status・Assignee・Due date・Priority・Effort levelを出力してください。\n\n${text}` }
                 ]
               }
             ]
@@ -63,16 +72,25 @@ module.exports = async (req, res) => {
       console.error("Gemini parse error:", e);
     }
 
-    // Notion プロパティ作成
+    // Notion プロパティ作成（必須以外は multi_select / rich_text / date で適宜設定）
     const notionProperties = {
       "Task name": { title: [{ text: { content: geminiData.title } }] } // 必須
     };
 
-    if (geminiData.type) notionProperties["Task type"] = { select: { name: geminiData.type } };
-    if (geminiData.status) notionProperties["Status"] = { select: { name: geminiData.status } };
+    if (geminiData.type) {
+      const types = geminiData.type.split(',').map(t => t.trim()).filter(t => t);
+      notionProperties["Task type"] = { multi_select: types.map(t => ({ name: t })) };
+    }
+    if (geminiData.status) {
+      const statuses = geminiData.status.split(',').map(s => s.trim()).filter(s => s);
+      notionProperties["Status"] = { multi_select: statuses.map(s => ({ name: s })) };
+    }
     if (geminiData.assignee) notionProperties["Assignee"] = { rich_text: [{ text: { content: geminiData.assignee } }] };
     if (geminiData.dueDate) notionProperties["Due date"] = { date: { start: geminiData.dueDate } };
-    if (geminiData.priority) notionProperties["Priority"] = { select: { name: geminiData.priority } };
+    if (geminiData.priority) {
+      const priorities = geminiData.priority.split(',').map(p => p.trim()).filter(p => p);
+      notionProperties["Priority"] = { multi_select: priorities.map(p => ({ name: p })) };
+    }
     if (geminiData.category.length > 0) notionProperties["Description"] = { rich_text: [{ text: { content: geminiData.category.join(", ") } }] };
     if (geminiData.effortLevel) notionProperties["Effort level"] = { rich_text: [{ text: { content: geminiData.effortLevel } }] };
 
@@ -89,7 +107,6 @@ module.exports = async (req, res) => {
         properties: notionProperties
       })
     });
-
     const notionData = await notionRes.json();
 
     fs.unlinkSync(tmpPath);
