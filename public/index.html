@@ -38,6 +38,10 @@ startBtn.addEventListener('click', async () => {
 
 stopBtn.addEventListener('click', () => {
   mediaRecorder.stop();
+  
+  // 🔽 ストリームを停止（マイク解放）
+  mediaRecorder.stream.getTracks().forEach(track => track.stop());
+
   mediaRecorder.onstop = async () => {
     statusEl.textContent = "ステータス: データ変換中...";
     const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
@@ -45,21 +49,22 @@ stopBtn.addEventListener('click', () => {
     // Base64 に変換
     const reader = new FileReader();
     reader.onloadend = async () => {
-      const base64Audio = reader.result.split(',')[1];
-      
-      statusEl.textContent = "ステータス: サーバ送信中...";
-      try {
-        const res = await fetch('/api/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ base64Audio })
-        });
-        const data = await res.json();
-        statusEl.textContent = "ステータス: 完了 → " + JSON.stringify(data);
-      } catch (err) {
-        statusEl.textContent = "ステータス: エラー → " + err.message;
-      }
+    const base64data = reader.result.split(',')[1]; // 正しく抽出
+
+    statusEl.textContent = "ステータス: サーバ送信中...";
+    try {
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ audioBase64: base64data }) // ← 修正ポイント！
+      });
+      const data = await res.json();
+      statusEl.textContent = "ステータス: 完了 → " + JSON.stringify(data);
+    } catch (err) {
+      statusEl.textContent = "ステータス: エラー → " + err.message;
+    }
     };
+
     reader.readAsDataURL(audioBlob);
   };
   startBtn.disabled = false;
