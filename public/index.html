@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>音声タスク登録</title>
+<style>
+  body { font-family: sans-serif; padding: 20px; }
+  button { margin: 5px; padding: 10px 20px; }
+  #status { margin-top: 10px; }
+</style>
+</head>
+<body>
+<h1>スマホで録音 → Notion タスク登録</h1>
+
+<button id="startBtn">録音開始</button>
+<button id="stopBtn" disabled>録音停止</button>
+
+<p id="status">ステータス: 待機中</p>
+
+<script>
+let mediaRecorder;
+let audioChunks = [];
+
+const startBtn = document.getElementById('startBtn');
+const stopBtn = document.getElementById('stopBtn');
+const statusEl = document.getElementById('status');
+
+startBtn.addEventListener('click', async () => {
+  statusEl.textContent = "ステータス: 録音中...";
+  audioChunks = [];
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  mediaRecorder = new MediaRecorder(stream);
+  mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+  mediaRecorder.start();
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
+});
+
+stopBtn.addEventListener('click', () => {
+  mediaRecorder.stop();
+  mediaRecorder.onstop = async () => {
+    statusEl.textContent = "ステータス: データ変換中...";
+    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+    
+    // Base64 に変換
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64Audio = reader.result.split(',')[1];
+      
+      statusEl.textContent = "ステータス: サーバ送信中...";
+      try {
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ base64Audio })
+        });
+        const data = await res.json();
+        statusEl.textContent = "ステータス: 完了 → " + JSON.stringify(data);
+      } catch (err) {
+        statusEl.textContent = "ステータス: エラー → " + err.message;
+      }
+    };
+    reader.readAsDataURL(audioBlob);
+  };
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+});
+</script>
+</body>
+</html>
