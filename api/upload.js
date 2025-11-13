@@ -1,9 +1,8 @@
-const fetch = require('node-fetch');
-const FormData = require('form-data');
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
+import fetch from 'node-fetch'; // Node 18+なら不要、組み込みfetch使える
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
   try {
@@ -13,15 +12,15 @@ module.exports = async (req, res) => {
     const tmpPath = path.join('/tmp', `audio-${Date.now()}.wav`);
     fs.writeFileSync(tmpPath, Buffer.from(audioBase64, 'base64'));
 
-    const formData = new FormData();
-    formData.append('file', fs.createReadStream(tmpPath));
-    formData.append('model', 'whisper-1');
-
     // Whisper API
+    const whisperForm = new FormData();
+    whisperForm.append('file', fs.createReadStream(tmpPath));
+    whisperForm.append('model', 'whisper-1');
+
     const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
-      body: formData
+      body: whisperForm
     });
     const whisperData = await whisperRes.json();
     const text = whisperData.text;
@@ -63,6 +62,6 @@ module.exports = async (req, res) => {
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Error processing audio' });
+    res.status(500).json({ error: 'Error processing audio', detail: err.message });
   }
-};
+}
