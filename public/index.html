@@ -44,7 +44,7 @@ stopBtn.addEventListener('click', () => {
 
   mediaRecorder.onstop = async () => {
     statusEl.textContent = "ステータス: データ変換中...";
-    const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+    const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
     
     // Base64 に変換
     const reader = new FileReader();

@@ -11,9 +11,11 @@ module.exports = async (req, res) => {
     const { audioBase64 } = req.body;
     if (!audioBase64) return res.status(400).json({ error: 'Missing audio data' });
 
-    // 一時ファイルに保存
-    const tmpPath = path.join('/tmp', `audio-${Date.now()}.wav`);
-    fs.writeFileSync(tmpPath, Buffer.from(audioBase64, 'base64'));
+    const tmpPath = path.join('/tmp', `audio-${Date.now()}.webm`);
+    // Base64ヘッダー除去（重要）
+    const base64Data = audioBase64.replace(/^data:.*;base64,/, "");
+    // base64 → バイナリへ変換して書き込み
+    fs.writeFileSync(tmpPath, Buffer.from(base64Data, "base64"));
 
     // Whisper API
     const formData = new FormData();
