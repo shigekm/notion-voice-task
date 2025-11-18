@@ -7,15 +7,28 @@ module.exports = async (req, res) => {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
 
   try {
-    // index.html から送信される key に合わせる
     const { audioBase64 } = req.body;
     if (!audioBase64) return res.status(400).json({ error: 'Missing audio data' });
 
+    // 一時ファイルパス
     const tmpPath = path.join('/tmp', `audio-${Date.now()}.webm`);
-    // Base64ヘッダー除去（重要）
+
+    // Base64ヘッダー除去
     const base64Data = audioBase64.replace(/^data:.*;base64,/, "");
-    // base64 → バイナリへ変換して書き込み
-    fs.writeFileSync(tmpPath, Buffer.from(base64Data, "base64"));
+
+    // base64 → バイナリ → 書き込み（同期的に安全に）
+    const buffer = Buffer.from(base64Data, "base64");
+    fs.writeFileSync(tmpPath, buffer);
+
+    // ★ 書き込み後にファイルサイズを必ず確認（0バイトなら録音失敗）
+    const fileStats = fs.statSync(tmpPath);
+    if (fileStats.size === 0) {
+      fs.unlinkSync(tmpPath);
+      return res.status(400).json({ error: 'Audio file is empty (0 bytes)' });
+    }
+
+    // デバッグログ（必要ならコメントアウト）
+    console.log("Audio file size:", fileStats.size);
 
     // Whisper API
     const formData = new FormData();
@@ -27,10 +40,11 @@ module.exports = async (req, res) => {
       headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}` },
       body: formData
     });
+
     const whisperData = await whisperRes.json();
     const text = whisperData.text && whisperData.text.length > 0 ? whisperData.text : "音声内容なし";
 
-    // Gemini API（タスク用に整理）
+    // Gemini API
     let geminiData = {
       title: text.slice(0,50),
       type: "Memo",
@@ -41,6 +55,7 @@ module.exports = async (req, res) => {
       priority: "",
       effortLevel: ""
     };
+
     try {
       const geminiRes = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${process.env.GEMINI_API_KEY}`,
@@ -58,8 +73,10 @@ module.exports = async (req, res) => {
           })
         }
       );
+
       const geminiRaw = await geminiRes.json();
       const parsed = JSON.parse(geminiRaw.candidates?.[0]?.content?.parts?.[0]?.text || "{}");
+
       geminiData = {
         title: parsed.title || text.slice(0,50),
         type: parsed.type || "Memo",
@@ -70,13 +87,14 @@ module.exports = async (req, res) => {
         priority: parsed.priority || "",
         effortLevel: parsed.effortLevel || ""
       };
+
     } catch (e) {
       console.error("Gemini parse error:", e);
     }
 
-    // Notion プロパティ作成（必須以外は multi_select / rich_text / date で適宜設定）
+    // Notion プロパティ作成
     const notionProperties = {
-      "Task name": { title: [{ text: { content: geminiData.title } }] } // 必須
+      "Task name": { title: [{ text: { content: geminiData.title } }] }
     };
 
     if (geminiData.type) {
@@ -87,16 +105,24 @@ module.exports = async (req, res) => {
       const statuses = geminiData.status.split(',').map(s => s.trim()).filter(s => s);
       notionProperties["Status"] = { multi_select: statuses.map(s => ({ name: s })) };
     }
-    if (geminiData.assignee) notionProperties["Assignee"] = { rich_text: [{ text: { content: geminiData.assignee } }] };
-    if (geminiData.dueDate) notionProperties["Due date"] = { date: { start: geminiData.dueDate } };
+    if (geminiData.assignee) {
+      notionProperties["Assignee"] = { rich_text: [{ text: { content: geminiData.assignee } }] };
+    }
+    if (geminiData.dueDate) {
+      notionProperties["Due date"] = { date: { start: geminiData.dueDate } };
+    }
     if (geminiData.priority) {
       const priorities = geminiData.priority.split(',').map(p => p.trim()).filter(p => p);
       notionProperties["Priority"] = { multi_select: priorities.map(p => ({ name: p })) };
     }
-    if (geminiData.category.length > 0) notionProperties["Description"] = { rich_text: [{ text: { content: geminiData.category.join(", ") } }] };
-    if (geminiData.effortLevel) notionProperties["Effort level"] = { rich_text: [{ text: { content: geminiData.effortLevel } }] };
+    if (geminiData.category.length > 0) {
+      notionProperties["Description"] = { rich_text: [{ text: { content: geminiData.category.join(", ") } }] };
+    }
+    if (geminiData.effortLevel) {
+      notionProperties["Effort level"] = { rich_text: [{ text: { content: geminiData.effortLevel } }] };
+    }
 
-    // Notion API 送信
+    // Notion API
     const notionRes = await fetch(`https://api.notion.com/v1/pages`, {
       method: 'POST',
       headers: {
@@ -109,10 +135,13 @@ module.exports = async (req, res) => {
         properties: notionProperties
       })
     });
+
     const notionData = await notionRes.json();
 
+    // 一時ファイル削除
     fs.unlinkSync(tmpPath);
 
+    // 完了レスポンス
     res.status(200).json({ transcription: text, gemini: geminiData, notion: notionData });
 
   } catch (err) {
